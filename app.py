@@ -39,11 +39,15 @@ class CustomCollector(object):
         return dateutil.parser.parse(date).timestamp()
 
     @staticmethod
-    def find_base_image(images, digest):
+    def find_base_image(images, built_images, digest):
         """Returns the base image of *digest*.
 
         Finds the image that shares the most first n layers with the given image.
         """
+
+        base_image = built_images.get(digest)
+        if base_image in images:
+            return images[base_image]
 
         image = images[digest]
         if image:
@@ -58,6 +62,18 @@ class CustomCollector(object):
 
     def update(self):
         logging.info(f"Collecting container image metrics")
+
+        v1_build = self.dyn_client.resources.get(api_version='v1', kind='Build')
+        built_images = {}
+        for build in v1_build.get().items:
+            base_image = build['spec']['strategy'].get('dockerStrategy', {}).get('from', {}).get('name') or build['spec']['strategy'].get('sourceStrategy', {}).get('from', {}).get('name')
+            output_image = build['status'].get('output', {}).get('to', {}).get('imageDigest', {})
+            # if not base_image:
+            #    base_image = build['spec']['strategy'].get('sourceStrategy', {}).get('from', {}).get('name')
+            if base_image and output_image:
+                base_image = base_image.split('@')
+                if len(base_image) > 1:
+                  built_images[output_image] = base_image[1]
 
         v1_image = self.dyn_client.resources.get(api_version='v1', kind='Image')
         images = {}
@@ -95,7 +111,7 @@ class CustomCollector(object):
 
                 if image_metadata:
                     image_creation_timestamp = self.to_timestamp(image_metadata['created'])
-                    base_image = self.find_base_image(images, digest)
+                    base_image = self.find_base_image(images, built_images, digest)
                 else:
                     base_image = None
                     image_creation_timestamp = 0
