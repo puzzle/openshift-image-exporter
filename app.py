@@ -15,8 +15,7 @@ import dateutil.parser
 from prometheus_client.core import GaugeMetricFamily, REGISTRY
 from openshift.dynamic.exceptions import NotFoundError
 
-IMAGE_METRIC_FAMILY = GaugeMetricFamily('container_image_creation_timestamp', 'Creation timestamp of container image', labels=['namespace', 'pod_container', 'image'])
-BASE_IMAGE_METRIC_FAMILY = GaugeMetricFamily('container_base_image_creation_timestamp', 'Creation timestamp of container base image', labels=['namespace', 'pod_container', 'image'])
+IMAGE_METRIC_FAMILY = None
 
 class CustomCollector(object):
     def __init__(self):
@@ -30,18 +29,18 @@ class CustomCollector(object):
         k8s_client = kubernetes.client.api_client.ApiClient(kubernetes.client.Configuration())
         self.dyn_client = openshift.dynamic.DynamicClient(k8s_client)
 
+#        v1 = k8s_client.CoreV1Api()
+        #print(v1.list_namespaces())
+
         self.image_metric_family = None
-        self.base_image_metric_family = None
 
     def collect(self):
         if self.image_metric_family:
             yield self.image_metric_family
-        if self.base_image_metric_family:
-            yield self.base_image_metric_family
 
     def update(self):
         collectorUpdater = CustomCollectorUpdater(self.dyn_client, self.namespace)
-        self.image_metric_family, self.base_image_metric_family = collectorUpdater.run()
+        self.image_metric_family = collectorUpdater.run()
 
 
 class CustomCollectorUpdater(object):
@@ -152,8 +151,7 @@ class CustomCollectorUpdater(object):
         self.fetch_images()
         self.fetch_built_images()
 
-        image_metric_family = GaugeMetricFamily('container_image_creation_timestamp', 'Creation timestamp of container image', labels=['namespace', 'pod_container', 'image'])
-        base_image_metric_family = GaugeMetricFamily('container_base_image_creation_timestamp', 'Creation timestamp of container base image', labels=['namespace', 'pod_container', 'image'])
+        image_metric_family = GaugeMetricFamily('container_image_creation_timestamp', 'Creation timestamp of container image', labels=['namespace', 'pod_container', 'type', 'image'])
 
         self.missing_images=set()
         v1_pod = self.dyn_client.resources.get(api_version='v1', kind='Pod')
@@ -189,8 +187,8 @@ class CustomCollectorUpdater(object):
                     base_image_name = '<unknown>'
                     base_image_creation_timestamp = 0
 
-                image_metric_family.add_metric([namespace, pod_container, image_name], image_creation_timestamp)
-                base_image_metric_family.add_metric([namespace, pod_container, base_image_name], base_image_creation_timestamp)
+                image_metric_family.add_metric([namespace, pod_container, 'container_image', image_name], image_creation_timestamp)
+                image_metric_family.add_metric([namespace, pod_container, 'parent_image', base_image_name], base_image_creation_timestamp)
 
                 container_count += 1
 
@@ -198,7 +196,7 @@ class CustomCollectorUpdater(object):
 
         logging.info(f"Collected image metrics for {container_count} running containers")
 
-        return image_metric_family, base_image_metric_family
+        return image_metric_family
 
 
 if __name__ == '__main__':
