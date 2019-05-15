@@ -11,10 +11,12 @@ import openshift.dynamic.exceptions
 import prometheus_client
 import urllib3
 import dateutil.parser
+import re
 
 from prometheus_client.core import GaugeMetricFamily, REGISTRY
 from openshift.dynamic.exceptions import NotFoundError
 
+IMAGE_ID_RE = re.compile(r'docker-pullable://([^@]+@(.+))')
 IMAGE_METRIC_FAMILY = None
 
 class CustomCollector(object):
@@ -30,7 +32,7 @@ class CustomCollector(object):
         self.dyn_client = openshift.dynamic.DynamicClient(k8s_client)
 
 #        v1 = k8s_client.CoreV1Api()
-        #print(v1.list_namespaces())
+#        print(v1.list_namespaces())
 
         self.image_metric_family = None
 
@@ -168,9 +170,16 @@ class CustomCollectorUpdater(object):
                 image_id = container_status['imageID']
                 if not image_id:
                     continue
-                image_name = image_id.split('//')[1]
-                digest = image_name.split('@')[1]
-                image_metadata = self.images.get(digest)
+
+                match = IMAGE_ID_RE.match(container_status['imageID'])
+                if match:
+                    image_name = match.group(1)
+                    digest = match.group(2)
+                    image_metadata = self.images.get(digest)
+                else:
+                    image_name = None
+                    digest = None
+                    image_metadata = None
 
                 if image_metadata:
                     image_creation_timestamp = dateutil.parser.parse(image_metadata['created']).timestamp()
@@ -178,17 +187,18 @@ class CustomCollectorUpdater(object):
                 else:
                     base_image = None
                     image_creation_timestamp = 0
-                    self.missing_images.add(image_name)
+                    if image_name:
+                        self.missing_images.add(image_name)
 
                 if base_image:
                     base_image_name = base_image['name']
                     base_image_creation_timestamp = dateutil.parser.parse(base_image['created']).timestamp()
                 else:
-                    base_image_name = '<unknown>'
+                    base_image_name = None
                     base_image_creation_timestamp = 0
 
-                image_metric_family.add_metric([namespace, pod_container, 'container_image', image_name], image_creation_timestamp)
-                image_metric_family.add_metric([namespace, pod_container, 'parent_image', base_image_name], base_image_creation_timestamp)
+                image_metric_family.add_metric([namespace, pod_container, 'container_image', image_name or '<unknown>'], image_creation_timestamp)
+                image_metric_family.add_metric([namespace, pod_container, 'parent_image', base_image_name or '<unknown>'], base_image_creation_timestamp)
 
                 container_count += 1
 
@@ -204,6 +214,9 @@ if __name__ == '__main__':
 
     # Disable SSL warnings: https://urllib3.readthedocs.io/en/latest/advanced-usage.html#ssl-warnings
     urllib3.disable_warnings()
+
+    # Disable PyYAML warnings in 3rd party code: https://github.com/yaml/pyyaml/wiki/PyYAML-yaml.load(input)-Deprecation#how-to-disable-the-warning
+    os.environ['PYTHONWARNINGS'] = 'ignore::yaml.YAMLLoadWarning'
 
     interval = int(os.getenv('IMAGE_METRICS_INTERVAL', '300'))
     customCollector = CustomCollector()
