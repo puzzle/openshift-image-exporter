@@ -146,6 +146,28 @@ class CustomCollectorUpdater(object):
             if layers:
                 self.images[layers] = self.images[digest]
 
+    def get_owner(self, obj):
+        owner_references = obj.metadata.ownerReferences
+        if not owner_references:
+            return None
+
+        namespace = obj.metadata.namespace
+        apiVersion = owner_references[0].apiVersion
+        kind = owner_references[0].kind
+        name = owner_references[0].name
+
+        if kind in ['ReplicationController', 'ReplicaSet']:
+            owner_client = self.dyn_client.resources.get(api_version=apiVersion, kind=kind)
+            try:
+                owner = owner_client.get(namespace=namespace, name=name)
+                parent_owner_references = owner.metadata.ownerReferences
+                if parent_owner_references:
+                    kind = parent_owner_references[0].kind
+                    name = parent_owner_references[0].name
+            except Exception:
+                pass
+
+        return name
 
     def run(self):
         logging.info("Collecting container image metrics")
@@ -153,7 +175,7 @@ class CustomCollectorUpdater(object):
         self.fetch_images()
         self.fetch_built_images()
 
-        image_metric_family = GaugeMetricFamily('container_image_creation_timestamp', 'Creation timestamp of container image', labels=['namespace', 'pod_container', 'type', 'image'])
+        image_metric_family = GaugeMetricFamily('container_image_creation_timestamp', 'Creation timestamp of container image', labels=['namespace', 'pod_container', 'type', 'image', 'owner_container'])
 
         self.missing_images=set()
         v1_pod = self.dyn_client.resources.get(api_version='v1', kind='Pod')
@@ -164,9 +186,17 @@ class CustomCollectorUpdater(object):
             container_statuses = pod['status']['containerStatuses']
             if pod['status']['phase'] != 'Running' or pod['deletionTimestamp']:
                 continue
+
+            owner = self.get_owner(pod)
+
             for container_status in container_statuses:
                 container_name = container_status['name']
-                pod_container = pod_name + '/' + container_name
+                pod_container = f"{pod_name}/{container_name}"
+                if owner:
+                    owner_container = f"{owner}/{container_name}"
+                else:
+                    owner_container = ""
+
                 image_id = container_status['imageID']
                 if not image_id:
                     continue
@@ -197,8 +227,8 @@ class CustomCollectorUpdater(object):
                     base_image_name = None
                     base_image_creation_timestamp = 0
 
-                image_metric_family.add_metric([namespace, pod_container, 'container_image', image_name or '<unknown>'], image_creation_timestamp)
-                image_metric_family.add_metric([namespace, pod_container, 'parent_image', base_image_name or '<unknown>'], base_image_creation_timestamp)
+                image_metric_family.add_metric([namespace, pod_container, 'container_image', image_name or '<unknown>', owner_container], image_creation_timestamp)
+                image_metric_family.add_metric([namespace, pod_container, 'parent_image', base_image_name or '<unknown>', owner_container], base_image_creation_timestamp)
 
                 container_count += 1
 
@@ -214,9 +244,6 @@ if __name__ == '__main__':
 
     # Disable SSL warnings: https://urllib3.readthedocs.io/en/latest/advanced-usage.html#ssl-warnings
     urllib3.disable_warnings()
-
-    # Disable PyYAML warnings in 3rd party code: https://github.com/yaml/pyyaml/wiki/PyYAML-yaml.load(input)-Deprecation#how-to-disable-the-warning
-    os.environ['PYTHONWARNINGS'] = 'ignore::yaml.YAMLLoadWarning'
 
     interval = int(os.getenv('IMAGE_METRICS_INTERVAL', '300'))
     customCollector = CustomCollector()
