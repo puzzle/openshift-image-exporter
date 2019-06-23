@@ -35,14 +35,17 @@ class CustomCollector(object):
 #        print(v1.list_namespaces())
 
         self.image_metric_family = None
+        self.route_metric_family = None
 
     def collect(self):
         if self.image_metric_family:
             yield self.image_metric_family
+        if self.route_metric_family:
+            yield self.route_metric_family
 
     def update(self):
         collectorUpdater = CustomCollectorUpdater(self.dyn_client, self.namespace)
-        self.image_metric_family = collectorUpdater.run()
+        self.image_metric_family, self.route_metric_family = collectorUpdater.run()
 
 
 class CustomCollectorUpdater(object):
@@ -176,6 +179,7 @@ class CustomCollectorUpdater(object):
         self.fetch_built_images()
 
         image_metric_family = GaugeMetricFamily('container_image_creation_timestamp', 'Creation timestamp of container image', labels=['namespace', 'pod_container', 'type', 'image', 'owner_container'])
+        route_metric_family = GaugeMetricFamily('openshift_route_info', 'Information about OpenShift routes', labels=['namespace', 'name', 'host', 'service', 'tls_termination', 'ip_whitelist'])
 
         self.missing_images=set()
         v1_pod = self.dyn_client.resources.get(api_version='v1', kind='Pod')
@@ -236,7 +240,17 @@ class CustomCollectorUpdater(object):
 
         logging.info(f"Collected image metrics for {container_count} running containers")
 
-        return image_metric_family
+        v1_route = self.dyn_client.resources.get(api_version='v1', kind='Route')
+        for route in v1_route.get().items:
+            namespace = route.metadata.namespace
+            name = route.metadata.name
+            host = route.spec.host
+            service = route.spec.to.name
+            tls_termination = route.spec.get('tls', {}).get('termination', "")
+            ip_whitelist = route.metadata.get('annotations', {}).get('haproxy.router.openshift.io/ip_whitelist', "")
+            route_metric_family.add_metric([namespace, name, host, service, tls_termination, ip_whitelist], 1)
+
+        return image_metric_family, route_metric_family
 
 
 if __name__ == '__main__':
