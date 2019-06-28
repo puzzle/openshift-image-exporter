@@ -16,7 +16,7 @@ import re
 from prometheus_client.core import GaugeMetricFamily, REGISTRY
 from openshift.dynamic.exceptions import NotFoundError
 
-IMAGE_ID_RE = re.compile(r'docker-pullable://([^@]+@(.+))')
+IMAGE_ID_RE = re.compile(r'docker-pullable://(([^@]+)@(.+))')
 IMAGE_METRIC_FAMILY = None
 
 class CustomCollector(object):
@@ -178,7 +178,7 @@ class CustomCollectorUpdater(object):
         self.fetch_images()
         self.fetch_built_images()
 
-        image_metric_family = GaugeMetricFamily('container_image_creation_timestamp', 'Creation timestamp of container image', labels=['namespace', 'pod_container', 'type', 'image', 'owner_container'])
+        image_metric_family = GaugeMetricFamily('container_image_creation_timestamp', 'Creation timestamp of container image', labels=['namespace', 'pod_container', 'type', 'image', 'owner_container', 'repo'])
         route_metric_family = GaugeMetricFamily('openshift_route_info', 'Information about OpenShift routes', labels=['namespace', 'name', 'host', 'service', 'tls_termination', 'ip_whitelist'])
 
         self.missing_images=set()
@@ -208,10 +208,12 @@ class CustomCollectorUpdater(object):
                 match = IMAGE_ID_RE.match(container_status['imageID'])
                 if match:
                     image_name = match.group(1)
-                    digest = match.group(2)
+                    image_repo = match.group(2)
+                    digest = match.group(3)
                     image_metadata = self.images.get(digest)
                 else:
                     image_name = None
+                    image_repo = None
                     digest = None
                     image_metadata = None
 
@@ -226,13 +228,15 @@ class CustomCollectorUpdater(object):
 
                 if base_image:
                     base_image_name = base_image['name']
+                    base_image_repo = base_image_name.split('@')[0]
                     base_image_creation_timestamp = dateutil.parser.parse(base_image['created']).timestamp()
                 else:
                     base_image_name = None
+                    base_image_repo = None
                     base_image_creation_timestamp = 0
 
-                image_metric_family.add_metric([namespace, pod_container, 'container_image', image_name or '<unknown>', owner_container], image_creation_timestamp)
-                image_metric_family.add_metric([namespace, pod_container, 'parent_image', base_image_name or '<unknown>', owner_container], base_image_creation_timestamp)
+                image_metric_family.add_metric([namespace, pod_container, 'container_image', image_name or '<unknown>', owner_container, image_repo or '<unknown>'], image_creation_timestamp)
+                image_metric_family.add_metric([namespace, pod_container, 'parent_image', base_image_name or '<unknown>', owner_container, base_image_repo or '<unknown>'], base_image_creation_timestamp)
 
                 container_count += 1
 
