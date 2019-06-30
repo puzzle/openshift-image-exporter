@@ -13,7 +13,7 @@ import urllib3
 import dateutil.parser
 import re
 
-from prometheus_client.core import GaugeMetricFamily, REGISTRY
+from prometheus_client.core import GaugeMetricFamily, InfoMetricFamily, REGISTRY
 from openshift.dynamic.exceptions import NotFoundError
 
 IMAGE_ID_RE = re.compile(r'docker-pullable://(([^@]+)@(.+))')
@@ -36,16 +36,19 @@ class CustomCollector(object):
 
         self.image_metric_family = None
         self.route_metric_family = None
+        self.env_metric_family = None
 
     def collect(self):
         if self.image_metric_family:
             yield self.image_metric_family
         if self.route_metric_family:
             yield self.route_metric_family
+        if self.env_metric_family:
+            yield self.env_metric_family
 
     def update(self):
         collectorUpdater = CustomCollectorUpdater(self.dyn_client, self.namespace)
-        self.image_metric_family, self.route_metric_family = collectorUpdater.run()
+        self.image_metric_family, self.route_metric_family, self.env_metric_family = collectorUpdater.run()
 
 
 class CustomCollectorUpdater(object):
@@ -180,6 +183,7 @@ class CustomCollectorUpdater(object):
 
         image_metric_family = GaugeMetricFamily('container_image_creation_timestamp', 'Creation timestamp of container image', labels=['namespace', 'pod_container', 'type', 'image', 'owner_container', 'repo'])
         route_metric_family = GaugeMetricFamily('openshift_route_info', 'Information about OpenShift routes', labels=['namespace', 'name', 'host', 'service', 'tls_termination', 'ip_whitelist'])
+        env_metric_family = InfoMetricFamily('openshift_pod_env', 'Information about pod environment variables', labels=['namespace', 'pod_container', 'owner_container'])
 
         self.missing_images=set()
         v1_pod = self.dyn_client.resources.get(api_version='v1', kind='Pod')
@@ -187,11 +191,37 @@ class CustomCollectorUpdater(object):
         for pod in v1_pod.get().items:
             namespace = pod['metadata']['namespace']
             pod_name = pod['metadata']['name']
+            containers = pod['spec']['containers']
             container_statuses = pod['status']['containerStatuses']
             if pod['status']['phase'] != 'Running' or pod['deletionTimestamp']:
                 continue
 
             owner = self.get_owner(pod)
+
+            for container in containers:
+                if not container.env:
+                    continue
+
+                container_name = container['name']
+                pod_container = f"{pod_name}/{container_name}"
+                if owner:
+                    owner_container = f"{owner}/{container_name}"
+                else:
+                    owner_container = ""
+                container_env = {}
+                for var in container.env:
+                    if var.value:
+                        container_env[f"env_{var.name}"] = var.value
+                    elif var.valueFrom:
+                        if var.valueFrom.configMapKeyRef:
+                            container_env[f"env_{var.name}"] = f"<set to the key '{var.valueFrom.configMapKeyRef.key}' in configmap '{var.valueFrom.configMapKeyRef.name}'>"
+                        elif var.valueFrom.fieldRef:
+                            container_env[f"env_{var.name}"] = f"<set to the pod field '{var.valueFrom.fieldRef.fieldPath}'>"
+                        elif var.valueFrom.resourceFieldRef:
+                            container_env[f"env_{var.name}"] = f"<set to container resource '{var.valueFrom.resourceFieldRef.resource}'>"
+                        elif var.valueFrom.secretKeyRef:
+                            container_env[f"env_{var.name}"] = f"<set to the key '{var.valueFrom.secretKeyRef.key}' in secret '{var.valueFrom.secretKeyRef.name}'>"
+                env_metric_family.add_metric([namespace, pod_container, owner_container], container_env)
 
             for container_status in container_statuses:
                 container_name = container_status['name']
@@ -254,7 +284,7 @@ class CustomCollectorUpdater(object):
             ip_whitelist = route.metadata.get('annotations', {}).get('haproxy.router.openshift.io/ip_whitelist', "")
             route_metric_family.add_metric([namespace, name, host, service, tls_termination, ip_whitelist], 1)
 
-        return image_metric_family, route_metric_family
+        return image_metric_family, route_metric_family, env_metric_family
 
 
 if __name__ == '__main__':
