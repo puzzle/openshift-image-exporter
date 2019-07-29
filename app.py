@@ -182,7 +182,7 @@ class CustomCollectorUpdater(object):
         self.fetch_built_images()
 
         image_metric_family = GaugeMetricFamily('container_image_creation_timestamp', 'Creation timestamp of container image', labels=['namespace', 'pod_container', 'type', 'image', 'owner_container', 'repo'])
-        route_metric_family = GaugeMetricFamily('openshift_route_info', 'Information about OpenShift routes', labels=['namespace', 'name', 'host', 'service', 'tls_termination', 'ip_whitelist'])
+        route_metric_family = GaugeMetricFamily('openshift_route_info', 'Information about OpenShift routes', labels=['namespace', 'name', 'host', 'service', 'tls_termination', 'insecure_edge_termination', 'ip_whitelist'])
         env_metric_family = InfoMetricFamily('openshift_pod_env', 'Information about pod environment variables', labels=['namespace', 'pod_container', 'owner_container'])
 
         self.missing_images=set()
@@ -281,8 +281,9 @@ class CustomCollectorUpdater(object):
             host = route.spec.host
             service = route.spec.to.name
             tls_termination = route.spec.get('tls', {}).get('termination', "")
+            insecure_edge_termination = route.spec.get('tls', {}).get('insecureEdgeTerminationPolicy', "")
             ip_whitelist = route.metadata.get('annotations', {}).get('haproxy.router.openshift.io/ip_whitelist', "")
-            route_metric_family.add_metric([namespace, name, host, service, tls_termination, ip_whitelist], 1)
+            route_metric_family.add_metric([namespace, name, host, service, tls_termination, insecure_edge_termination, ip_whitelist], 1)
 
         return image_metric_family, route_metric_family, env_metric_family
 
