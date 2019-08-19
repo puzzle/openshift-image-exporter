@@ -17,7 +17,7 @@ from prometheus_client.core import GaugeMetricFamily, InfoMetricFamily, REGISTRY
 from openshift.dynamic.exceptions import NotFoundError
 
 IMAGE_ID_RE = re.compile(r'docker-pullable://(([^@]+)@(.+))')
-IMAGE_METRIC_FAMILY = None
+HAPROXY_ANNOTATION_RE = re.compile(r'haproxy.router.openshift.io/(.+)')
 
 class CustomCollector(object):
     def __init__(self):
@@ -182,7 +182,7 @@ class CustomCollectorUpdater(object):
         self.fetch_built_images()
 
         image_metric_family = GaugeMetricFamily('container_image_creation_timestamp', 'Creation timestamp of container image', labels=['namespace', 'pod_container', 'type', 'image', 'owner_container', 'repo'])
-        route_metric_family = GaugeMetricFamily('openshift_route_info', 'Information about OpenShift routes', labels=['namespace', 'name', 'host', 'service', 'tls_termination', 'insecure_edge_termination', 'ip_whitelist'])
+        route_metric_family = InfoMetricFamily('openshift_route', 'Information about OpenShift routes', labels=['namespace', 'name', 'host', 'service', 'tls_termination', 'insecure_edge_termination', 'ip_whitelist'])
         env_metric_family = InfoMetricFamily('openshift_pod_env', 'Information about pod environment variables', labels=['namespace', 'pod_container', 'owner_container'])
 
         self.missing_images=set()
@@ -283,7 +283,13 @@ class CustomCollectorUpdater(object):
             tls_termination = route.spec.get('tls', {}).get('termination', "")
             insecure_edge_termination = route.spec.get('tls', {}).get('insecureEdgeTerminationPolicy', "")
             ip_whitelist = route.metadata.get('annotations', {}).get('haproxy.router.openshift.io/ip_whitelist', "")
-            route_metric_family.add_metric([namespace, name, host, service, tls_termination, insecure_edge_termination, ip_whitelist], 1)
+            route_annotations = {}
+            for key, value in route.metadata.get('annotations', {}).items():
+                match = HAPROXY_ANNOTATION_RE.match(key)
+                if match and value:
+                    label_name = 'haproxy_' + re.sub(r'[^a-zA-Z_]', '_', match.group(1))
+                    route_annotations[label_name] = value
+            route_metric_family.add_metric([namespace, name, host, service, tls_termination, insecure_edge_termination, ip_whitelist], route_annotations)
 
         return image_metric_family, route_metric_family, env_metric_family
 
