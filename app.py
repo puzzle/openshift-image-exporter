@@ -210,17 +210,18 @@ class CustomCollectorUpdater(object):
                     owner_container = ""
                 container_env = {}
                 for var in container.env:
+                    label_name = "env_" + re.sub(r'[^a-zA-Z_]', '_', var.name)
                     if var.value:
-                        container_env[f"env_{var.name}"] = var.value
+                        container_env[label_name] = var.value
                     elif var.valueFrom:
                         if var.valueFrom.configMapKeyRef:
-                            container_env[f"env_{var.name}"] = f"<set to the key '{var.valueFrom.configMapKeyRef.key}' in configmap '{var.valueFrom.configMapKeyRef.name}'>"
+                            container_env[label_name] = f"<set to the key '{var.valueFrom.configMapKeyRef.key}' in configmap '{var.valueFrom.configMapKeyRef.name}'>"
                         elif var.valueFrom.fieldRef:
-                            container_env[f"env_{var.name}"] = f"<set to the pod field '{var.valueFrom.fieldRef.fieldPath}'>"
+                            container_env[label_name] = f"<set to the pod field '{var.valueFrom.fieldRef.fieldPath}'>"
                         elif var.valueFrom.resourceFieldRef:
-                            container_env[f"env_{var.name}"] = f"<set to container resource '{var.valueFrom.resourceFieldRef.resource}'>"
+                            container_env[label_name] = f"<set to container resource '{var.valueFrom.resourceFieldRef.resource}'>"
                         elif var.valueFrom.secretKeyRef:
-                            container_env[f"env_{var.name}"] = f"<set to the key '{var.valueFrom.secretKeyRef.key}' in secret '{var.valueFrom.secretKeyRef.name}'>"
+                            container_env[label_name] = f"<set to the key '{var.valueFrom.secretKeyRef.key}' in secret '{var.valueFrom.secretKeyRef.name}'>"
                 env_metric_family.add_metric([namespace, pod_container, owner_container], container_env)
 
             for container_status in container_statuses:
