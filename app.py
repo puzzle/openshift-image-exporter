@@ -175,6 +175,10 @@ class CustomCollectorUpdater(object):
 
         return name
 
+    @staticmethod
+    def label(var_name):
+        return "env_" + re.sub(r'[^a-zA-Z_]', '_', var_name)
+
     def run(self):
         logging.info("Collecting container image metrics")
 
@@ -187,6 +191,7 @@ class CustomCollectorUpdater(object):
 
         self.missing_images=set()
         v1_pod = self.dyn_client.resources.get(api_version='v1', kind='Pod')
+        v1_configmap = self.dyn_client.resources.get(api_version='v1', kind='ConfigMap')
         container_count = 0
         for pod in v1_pod.get().items:
             namespace = pod['metadata']['namespace']
@@ -210,7 +215,7 @@ class CustomCollectorUpdater(object):
                     owner_container = ""
                 container_env = {}
                 for var in container.env:
-                    label_name = "env_" + re.sub(r'[^a-zA-Z_]', '_', var.name)
+                    label_name = self.label(var.name)
                     if var.value:
                         container_env[label_name] = var.value
                     elif var.valueFrom:
@@ -222,6 +227,12 @@ class CustomCollectorUpdater(object):
                             container_env[label_name] = f"<set to container resource '{var.valueFrom.resourceFieldRef.resource}'>"
                         elif var.valueFrom.secretKeyRef:
                             container_env[label_name] = f"<set to the key '{var.valueFrom.secretKeyRef.key}' in secret '{var.valueFrom.secretKeyRef.name}'>"
+                if container.envFrom:
+                    for ref in container.envFrom:
+                        if ref.configMapRef:
+                            configmap = v1_configmap.get(namespace=namespace, name=ref.configMapRef.name).to_dict()['data']
+                            env_vars = {self.label(key): val for key, val in configmap.items()}
+                            container_env.update(env_vars)
                 env_metric_family.add_metric([namespace, pod_container, owner_container], container_env)
 
             for container_status in container_statuses:
