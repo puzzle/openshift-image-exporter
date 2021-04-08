@@ -1,2 +1,2 @@
-openshift
+openshift < 0.12
 prometheus_client
