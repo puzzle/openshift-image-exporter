@@ -85,13 +85,13 @@ class CustomCollectorUpdater(object):
         return None
 
     def update_missing_imagestream(self):
-        v1_imagestream = self.dyn_client.resources.get(api_version='v1', kind='ImageStream')
+        v1_imagestream = self.dyn_client.resources.get(api_version='image.openshift.io/v1', kind='ImageStream')
         try:
             image_stream = v1_imagestream.get(namespace=self.namespace, name='openshift-image-exporter-info')
             #old_image_stream = v1_imagestream.get(namespace=self.namespace, name='openshift-image-exporter-info')
         except NotFoundError:
             image_stream = {
-                'apiVersion': "v1",
+                'apiVersion': "image.openshift.io/v1",
                 'kind': "ImageStream",
                 'metadata': {
                     'name': 'openshift-image-exporter-info',
@@ -128,7 +128,7 @@ class CustomCollectorUpdater(object):
             v1_imagestream.create(body=image_stream, namespace=self.namespace)
 
     def fetch_built_images(self):
-        v1_build = self.dyn_client.resources.get(api_version='v1', kind='Build')
+        v1_build = self.dyn_client.resources.get(api_version='build.openshift.io/v1', kind='Build')
         self.built_images = {}
         for build in v1_build.get().items:
             base_image = build['spec']['strategy'].get('dockerStrategy', {}).get('from', {}).get('name') or build['spec']['strategy'].get('sourceStrategy', {}).get('from', {}).get('name')
@@ -139,7 +139,7 @@ class CustomCollectorUpdater(object):
                 self.built_images[output_image] = base_image
 
     def fetch_images(self):
-        v1_image = self.dyn_client.resources.get(api_version='v1', kind='Image')
+        v1_image = self.dyn_client.resources.get(api_version='image.openshift.io/v1', kind='Image')
         self.images = {}
         for image in v1_image.get().items:
             digest = image['metadata']['name']
@@ -286,7 +286,7 @@ class CustomCollectorUpdater(object):
 
         logging.info(f"Collected image metrics for {container_count} running containers")
 
-        v1_route = self.dyn_client.resources.get(api_version='v1', kind='Route')
+        v1_route = self.dyn_client.resources.get(api_version='route.openshift.io/v1', kind='Route')
         for route in v1_route.get().items:
             namespace = route.metadata.namespace
             name = route.metadata.name
