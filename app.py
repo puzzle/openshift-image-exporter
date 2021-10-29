@@ -16,7 +16,7 @@ import re
 from prometheus_client.core import GaugeMetricFamily, InfoMetricFamily, REGISTRY
 from openshift.dynamic.exceptions import NotFoundError
 
-IMAGE_ID_RE = re.compile(r'docker-pullable://(([^@]+)@(.+))')
+IMAGE_ID_RE = re.compile(r'(docker-pullable://)?(([^@]+)@(.+))')
 HAPROXY_ANNOTATION_RE = re.compile(r'haproxy.router.openshift.io/(.+)')
 
 class CustomCollector(object):
@@ -249,9 +249,9 @@ class CustomCollectorUpdater(object):
 
                 match = IMAGE_ID_RE.match(container_status['imageID'])
                 if match:
-                    image_name = match.group(1)
-                    image_repo = match.group(2)
-                    digest = match.group(3)
+                    image_name = match.group(2)
+                    image_repo = match.group(3)
+                    digest = match.group(4)
                     image_metadata = self.images.get(digest)
                 else:
                     image_name = None
