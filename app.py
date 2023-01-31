@@ -21,14 +21,15 @@ HAPROXY_ANNOTATION_RE = re.compile(r'haproxy.router.openshift.io/(.+)')
 
 class CustomCollector(object):
     def __init__(self):
+        configuration = kubernetes.client.Configuration()
         if 'KUBERNETES_PORT' in os.environ:
-            kubernetes.config.load_incluster_config()
+            kubernetes.config.load_incluster_config(client_configuration=configuration)
             self.namespace = pathlib.Path('/var/run/secrets/kubernetes.io/serviceaccount/namespace').read_text()
         else:
-            kubernetes.config.load_kube_config()
+            kubernetes.config.load_kube_config(client_configuration=configuration)
             _, active_context = kubernetes.config.list_kube_config_contexts()
             self.namespace = active_context['context']['namespace']
-        k8s_client = kubernetes.client.api_client.ApiClient(kubernetes.client.Configuration())
+        k8s_client = kubernetes.client.api_client.ApiClient(configuration=configuration)
         self.dyn_client = openshift.dynamic.DynamicClient(k8s_client)
 
 #        v1 = k8s_client.CoreV1Api()
