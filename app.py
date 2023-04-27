@@ -88,7 +88,7 @@ class CustomCollectorUpdater(object):
     def update_missing_imagestream(self):
         v1_imagestream = self.dyn_client.resources.get(api_version='image.openshift.io/v1', kind='ImageStream')
         try:
-            image_stream = v1_imagestream.get(namespace=self.namespace, name='openshift-image-exporter-info')
+            image_stream = v1_imagestream.get(namespace=self.namespace, name='openshift-image-exporter-info').to_dict()
             #old_image_stream = v1_imagestream.get(namespace=self.namespace, name='openshift-image-exporter-info')
         except NotFoundError:
             image_stream = {
@@ -97,11 +97,14 @@ class CustomCollectorUpdater(object):
                 'metadata': {
                     'name': 'openshift-image-exporter-info',
                     #'namespace': memcached['metadata']['namespace'],
-                },
-                'spec': {
-                    'tags': []
                 }
             }
+
+        image_stream.setdefault('spec', {}).setdefault('tags', [])
+
+        if len(image_stream['spec']['tags']) > 1000:
+            image_stream['spec']['tags'] = []
+            image_stream['status']['tags'] = []
 
         for image in self.missing_images:
             image_stream['spec']['tags'].append({
@@ -124,9 +127,12 @@ class CustomCollectorUpdater(object):
 
         #print(jsonpatch.JsonPatch.from_diff(old_image_stream['spec'], image_stream['spec']))
         if image_stream.get('status'):
-            v1_imagestream.replace(namespace=self.namespace, body=image_stream)
+           v1_imagestream.replace(namespace=self.namespace, body=image_stream)
+           if not image_stream['status']['tags']:
+             print('Clearing openshift-image-exporter-info image stream')
+             v1_imagestream.status.patch(namespace=self.namespace, name=image_stream['metadata']['name'], body={'status': {'tags': None}}, content_type='application/merge-patch+json')
         else:
-            v1_imagestream.create(body=image_stream, namespace=self.namespace)
+           v1_imagestream.create(body=image_stream, namespace=self.namespace)
 
     def fetch_built_images(self):
         v1_build = self.dyn_client.resources.get(api_version='build.openshift.io/v1', kind='Build')
