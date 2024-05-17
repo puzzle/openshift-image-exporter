@@ -297,8 +297,8 @@ class CustomCollectorUpdater(object):
         for route in v1_route.get().items:
             namespace = route.metadata.namespace
             name = route.metadata.name
-            host = route.spec.host
-            service = route.spec.to.name
+            host = route.spec.host or ''
+            service = route.spec.to.name or ''
             tls_termination = route.spec.get('tls', {}).get('termination', "")
             insecure_edge_termination = route.spec.get('tls', {}).get('insecureEdgeTerminationPolicy', "")
             ip_whitelist = route.metadata.get('annotations', {}).get('haproxy.router.openshift.io/ip_whitelist', "")
