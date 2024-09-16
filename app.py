@@ -102,7 +102,7 @@ class CustomCollectorUpdater(object):
 
         image_stream.setdefault('spec', {}).setdefault('tags', [])
 
-        if len(image_stream['spec']['tags']) > 1000 or len(image_stream['status']['tags']) > 1000:
+        if len(image_stream['spec']['tags']) > 500 or len(image_stream['status']['tags']) > 500:
             image_stream['spec']['tags'] = []
             image_stream['status']['tags'] = []
 
