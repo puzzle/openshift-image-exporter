@@ -155,7 +155,7 @@ class CustomCollectorUpdater(object):
             else:
                 layers = tuple()
 
-            self.images[digest] = {'name': image['dockerImageReference'], 'created': image['dockerImageMetadata']['Created'], 'layers': layers}
+            self.images[digest] = {'name': image['dockerImageReference'], 'created': image['dockerImageMetadata']['Created'] or image['metadata']['creationTimestamp'], 'layers': layers}
             if layers:
                 self.images[layers] = self.images[digest]
 
