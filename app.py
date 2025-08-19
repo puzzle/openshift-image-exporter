@@ -237,9 +237,14 @@ class CustomCollectorUpdater(object):
                 if container.envFrom:
                     for ref in container.envFrom:
                         if ref.configMapRef:
-                            configmap = v1_configmap.get(namespace=namespace, name=ref.configMapRef.name).to_dict()['data']
-                            env_vars = {self.label(key): val for key, val in configmap.items()}
-                            container_env.update(env_vars)
+                            try:
+                                configmap = v1_configmap.get(namespace=namespace, name=ref.configMapRef.name).to_dict()
+                                if 'data' in configmap:
+                                    env_vars = {self.label(key): val for key, val in configmap['data'].items()}
+                                    container_env.update(env_vars)
+                            except Exception as e:
+                                logging.debug(f"Could not find ConfigMap {ref.configMapRef.name} in namespace {namespace}: {str(e)}")
+                                continue
                 env_metric_family.add_metric([namespace, pod_container, owner_container], container_env)
 
             for container_status in container_statuses:
